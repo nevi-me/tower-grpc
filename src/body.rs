@@ -56,7 +56,7 @@ where
 
 /// Dynamic `Send` body object.
 pub struct BoxBody {
-    inner: Box<Body<Item = BytesBuf, Error = Status> + Send>,
+    inner: Box<dyn Body<Item = BytesBuf, Error = Status> + Send>,
 }
 
 struct MapBody<B>(B);
@@ -65,7 +65,7 @@ struct MapBody<B>(B);
 
 impl BoxBody {
     /// Create a new `BoxBody` backed by `inner`.
-    pub fn new(inner: Box<Body<Item = BytesBuf, Error = Status> + Send>) -> Self {
+    pub fn new(inner: Box<dyn Body<Item = BytesBuf, Error = Status> + Send>) -> Self {
         BoxBody {
             inner,
         }

@@ -5,20 +5,20 @@ extern crate futures;
 extern crate log;
 extern crate prost;
 extern crate tokio;
-extern crate tower_h2;
 extern crate tower_grpc;
+extern crate tower_h2;
 
 pub mod hello_world {
     include!(concat!(env!("OUT_DIR"), "/helloworld.rs"));
 }
 
-use hello_world::{server, HelloRequest, HelloReply};
+use hello_world::{server, HelloReply, HelloRequest};
 
 use futures::{future, Future, Stream};
 use tokio::executor::DefaultExecutor;
 use tokio::net::TcpListener;
-use tower_h2::Server;
 use tower_grpc::{Request, Response};
+use tower_h2::Server;
 
 #[derive(Clone, Debug)]
 struct Greet;
@@ -29,12 +29,33 @@ impl server::Greeter for Greet {
     fn say_hello(&mut self, request: Request<HelloRequest>) -> Self::SayHelloFuture {
         println!("REQUEST = {:?}", request);
 
+        dbg!("before waiting");
+        // connect to postgres and wait
+        connect().wait().expect("Should get an error connecting");
+        dbg!("after waiting");
+
         let response = Response::new(HelloReply {
             message: "Zomg, it works!".to_string(),
         });
 
         future::ok(response)
     }
+}
+
+// a postgres connection that never returns
+fn connect() -> impl Future<Item = tokio_postgres::Client, Error = tokio_postgres::error::Error> {
+    tokio_postgres::connect(
+        "postgres://postgres:password@localhost:5432/postgres",
+        tokio_postgres::NoTls,
+    )
+    .map(|(client, connection)| {
+        // spawn connection to run on its own
+        let connection = connection.map_err(|e| eprint!("Connection error: {}", e));
+        tokio::spawn(connection);
+
+        // return client
+        client
+    })
 }
 
 pub fn main() {
@@ -45,10 +66,11 @@ pub fn main() {
     let h2_settings = Default::default();
     let mut h2 = Server::new(new_service, h2_settings, DefaultExecutor::current());
 
-    let addr = "[::1]:50051".parse().unwrap();
+    let addr = "0.0.0.0:50051".parse().unwrap();
     let bind = TcpListener::bind(&addr).expect("bind");
 
-    let serve = bind.incoming()
+    let serve = bind
+        .incoming()
         .for_each(move |sock| {
             if let Err(e) = sock.set_nodelay(true) {
                 return Err(e);
